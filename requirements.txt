@@ -2,3 +2,4 @@ aiogram
 aiohttp
 fastapi
 uvicorn
+apscheduler
