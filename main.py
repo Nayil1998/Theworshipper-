@@ -16,19 +16,18 @@ TOKEN = os.getenv("BOT_TOKEN")
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
 DB_FILE = "/tmp/users.json"
 
-# إعدادات الإقامة (بالدقائق)
 IQAMAH_OFFSETS = {"Fajr": 25, "Dhuhr": 20, "Asr": 20, "Maghrib": 10, "Isha": 20}
 
-# محتوى الآيات حسب التوقيت (كل 3 ساعات)
-QURAN_VERSES = {
-    0: "﴿وَبِالْأَسْحَارِ هُمْ يَسْتَغْفِرُونَ﴾ .. وقت السحر غنيمة.",
-    3: "﴿وَالصُّبْحِ إِذَا تَنَفَّسَ﴾ .. صباح طاعة وبركة.",
-    6: "﴿قُلْ إِنَّ صَلَاتِي وَنُسُكِي وَمَحْيَايَ وَمَمَاتِي لِلَّهِ رَبِّ الْعَالَمِينَ﴾.",
-    9: "﴿وَتَزَوَّدُوا فَإِنَّ خَيْرَ الزَّادِ التَّقْوَى﴾.",
-    12: "﴿أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ﴾.",
-    15: "﴿وَاسْتَعِينُوا بِالصَّبْرِ وَالصَّلَاةِ﴾ .. رمضان مدرسة الصبر.",
-    18: "﴿ثُمَّ أَتِمُّوا الصِّيَامَ إِلَى اللَّيْلِ﴾ .. هنيئاً للصائمين.",
-    21: "﴿إِنَّا أَنْزَلْنَاهُ فِي لَيْلَةِ الْقَدْرِ﴾ .. ليلك عمار بالقرآن."
+# آيات قرآنية مختارة (تتماشى مع الوقت)
+QURAN_MESSAGES = {
+    0: "﴿وَبِالْأَسْحَارِ هُمْ يَسْتَغْفِرُونَ﴾.. لا تنسَ السحور والاستغفار.",
+    3: "﴿وَالصُّبْحِ إِذَا تَنَفَّسَ﴾.. صباحك طاعة وبركة.",
+    6: "﴿إِنَّ قُرْآنَ الْفَجْرِ كَانَ مَشْهُودًا﴾.. ذكر الله أول النهار فلاح.",
+    9: "﴿وَتَزَوَّدُوا فَإِنَّ خَيْرَ الزَّادِ التَّقْوَى﴾.. ضحى مبارك.",
+    12: "﴿أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ﴾.. ذكر الله راحة للروح.",
+    15: "﴿وَاسْتَعِينُوا بِالصَّبْرِ وَالصَّلَاةِ﴾.. ساعات ويحين الإفطار، صبراً جميلاً.",
+    18: "﴿ثُمَّ أَتِمُّوا الصِّيَامَ إِلَى اللَّيْلِ﴾.. ذهب الظمأ وابتلت العروق، تقبل الله منك.",
+    21: "﴿إِنَّا أَنْزَلْنَاهُ فِي لَيْلَةِ الْقَدْرِ﴾.. طابت ليلتك بالقيام والقرآن."
 }
 
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +36,7 @@ dp = Dispatcher()
 app = FastAPI()
 scheduler = AsyncIOScheduler()
 
-# --- وظائف مساعدة ---
+# --- وظائف قاعدة البيانات ---
 def load_users():
     if os.path.exists(DB_FILE):
         try:
@@ -53,15 +52,13 @@ def add_minutes(time_str, minutes):
     return (t + timedelta(minutes=minutes)).strftime("%H:%M")
 
 def get_prayer_name(p_en, is_friday):
-    if p_en == "Dhuhr" and is_friday:
-        return "صلاة الجمعة"
+    if p_en == "Dhuhr" and is_friday: return "صلاة الجمعة"
     names = {"Fajr": "الفجر", "Dhuhr": "الظهر", "Asr": "العصر", "Maghrib": "المغرب", "Isha": "العشاء"}
     return names.get(p_en)
 
 # --- المهام المجدولة ---
 
-# 1. تنبيهات الصلاة (كل دقيقة)
-async def check_prayer_notifications():
+async def check_prayer_and_notify():
     users = load_users()
     async with aiohttp.ClientSession() as session:
         for chat_id, info in users.items():
@@ -81,75 +78,50 @@ async def check_prayer_notifications():
                         adhan_t = timings[p_en]
                         iqamah_t = add_minutes(adhan_t, IQAMAH_OFFSETS[p_en])
 
-                        # أذان
                         if adhan_t == now_str and info.get("l_ad") != f"{p_en}_{now_str}":
                             msg = f"🌙 حان أذان {p_ar}\n"
-                            if p_en == "Maghrib": msg += "تقبل الله صيامكم، هنيئاً لكم الإفطار."
-                            elif p_en == "Fajr": msg += "صوماً مقبولاً، كفوا أيديكم وباشروا صلاتكم."
-                            else: msg += f"تقام الصلاة بعد {IQAMAH_OFFSETS[p_en]} دقيقة."
-                            
+                            if p_en == "Maghrib": msg += "تقبل الله صيامكم، إفطاراً شهياً."
+                            elif p_en == "Fajr": msg += "بادر بالصلاة، صوماً مقبولاً."
                             await bot.send_message(chat_id, msg)
                             info["l_ad"] = f"{p_en}_{now_str}"
                             save_users(users)
 
-                        # إقامة
                         elif iqamah_t == now_str and info.get("l_iq") != f"{p_en}_{now_str}":
-                            await bot.send_message(chat_id, f"🕌 إقامة {p_ar}.. أقبل على صلاتك بخشوع.")
+                            await bot.send_message(chat_id, f"🕌 إقامة {p_ar}.. صلاة بخشوع ترتقي بالروح.")
                             info["l_iq"] = f"{p_en}_{now_str}"
                             save_users(users)
             except: continue
 
-# 2. آية كل 3 ساعات
-async def send_periodic_verse():
+async def send_quran_verse():
     users = load_users()
     hour = datetime.now().hour
-    # تقريب الساعة لأقرب 3 ساعات (0, 3, 6...)
     closest_hour = (hour // 3) * 3
-    verse = QURAN_VERSES.get(closest_hour, QURAN_VERSES[12])
-    
+    verse = QURAN_MESSAGES.get(closest_hour, QURAN_MESSAGES[12])
     for chat_id in users:
         try: await bot.send_message(chat_id, f"📖 {verse}")
         except: pass
 
-# 3. أذكار الصباح والمساء
-async def send_adhkar_morning():
+async def send_daily_adhkar(type="morning"):
     users = load_users()
+    msg = "☀️ أذكار الصباح | زادُك في صيامك." if type == "morning" else "🌙 أذكار المساء | حِصنك من كل سوء."
     for chat_id in users:
-        try: await bot.send_message(chat_id, "☀️ أذكار الصباح | حصن صيامك بذكر الله.")
+        try: await bot.send_message(chat_id, msg)
         except: pass
 
-async def send_adhkar_evening():
-    users = load_users()
-    for chat_id in users:
-        try: await bot.send_message(chat_id, "🌙 أذكار المساء | أنس ليلك بذكر ربك.")
-        except: pass
-
-# --- معالجات الرسائل ---
+# --- المعالجات ---
 @dp.message(F.text == "/start")
 async def cmd_start(message: types.Message):
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📍 تفعيل تنبيهات رمضان", request_location=True)]],
-        resize_keyboard=True
-    )
-    await message.answer(
-        "مرحباً بك في بوت (مواقيت رمضان) 🌙\n\n"
-        "سيتم تنبيهك بالأذان، الإقامة، الأذكار، وآيات قرآنية كل 3 ساعات.\n"
-        "للبدء، شاركنا موقعك:",
-        reply_markup=kb
-    )
+    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📍 تفعيل تنبيهات رمضان", request_location=True)]], resize_keyboard=True)
+    await message.answer("مبارك عليك الشهر 🌙\n\nسأقوم بتنبيهك للأذان والإقامة، وتذكيرك بالأذكار وآيات قرآنية كل 3 ساعات.\n\nمن فضلك شارك موقعك للبدء:", reply_markup=kb)
 
 @dp.message(F.location)
 async def handle_location(message: types.Message):
     users = load_users()
-    users[str(message.chat.id)] = {
-        "lat": message.location.latitude,
-        "lon": message.location.longitude,
-        "l_ad": "", "l_iq": ""
-    }
+    users[str(message.chat.id)] = {"lat": message.location.latitude, "lon": message.location.longitude, "l_ad": "", "l_iq": ""}
     save_users(users)
-    await message.answer("✅ تم التفعيل. مبارك عليك الشهر، جعلنا الله وإياكم من صوامه وقوامه.")
+    await message.answer("✅ تم التفعيل بنجاح. جعلنا الله وإياكم من المقبولين.")
 
-# --- FastAPI & Scheduler ---
+# --- Webhook & FastAPI ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     update = Update.model_validate(await request.json(), context={"bot": bot})
@@ -158,16 +130,10 @@ async def telegram_webhook(request: Request):
 @app.on_event("startup")
 async def on_startup():
     if RENDER_URL: await bot.set_webhook(f"{RENDER_URL}/webhook")
-    
-    # فحص الصلاة كل دقيقة
-    scheduler.add_job(check_prayer_notifications, "interval", minutes=1)
-    # آية كل 3 ساعات (تبدأ من الساعة 0)
-    scheduler.add_job(send_periodic_verse, "interval", hours=3)
-    # أذكار الصباح (مثال: 5:30 صباحاً)
-    scheduler.add_job(send_adhkar_morning, "cron", hour=5, minute=30)
-    # أذكار المساء (مثال: 5:00 مساءً)
-    scheduler.add_job(send_adhkar_evening, "cron", hour=17, minute=0)
-    
+    scheduler.add_job(check_prayer_and_notify, "interval", minutes=1)
+    scheduler.add_job(send_quran_verse, "interval", hours=3)
+    scheduler.add_job(send_daily_adhkar, "cron", hour=5, minute=30, args=["morning"])
+    scheduler.add_job(send_daily_adhkar, "cron", hour=17, minute=0, args=["evening"])
     scheduler.start()
 
 if __name__ == "__main__":
