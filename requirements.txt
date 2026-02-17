@@ -1,6 +1,6 @@
 aiogram
-aiohttp
 fastapi
 uvicorn
 apscheduler
+aiohttp
 pytz
